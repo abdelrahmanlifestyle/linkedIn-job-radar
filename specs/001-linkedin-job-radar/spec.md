@@ -47,7 +47,7 @@ As the user, I want the radar to run on a fixed schedule in the cloud, even when
 
 1. **Given** the radar is deployed, **When** 24 hours pass with the user's PC off, **Then** runs happen roughly every 30 minutes and the user keeps getting alerts.
 2. **Given** LinkedIn answers with a rate-limit or blocking response, **When** the radar runs, **Then** it retries at most twice with growing waits, then skips that search for this run without failing the whole run.
-3. **Given** any run, **When** it finishes, **Then** it has sent no more than about 15 requests to LinkedIn, with a random pause of 2–5 seconds between requests.
+3. **Given** any run, **When** it finishes, **Then** it has sent at most 15 requests to LinkedIn (retries included), with a random pause of 2–5 seconds between requests.
 4. **Given** a manual trigger by the user, **When** it is started, **Then** a run happens right away without waiting for the schedule.
 
 ---
@@ -63,7 +63,7 @@ As the user, I don't want dozens of messages when the radar starts for the first
 **Acceptance Scenarios**:
 
 1. **Given** no history of seen jobs, **When** the radar runs for the first time, **Then** every current match is recorded as seen and a single "Radar started — N jobs currently open" message is sent.
-2. **Given** more than 15 new matching jobs in one run, **When** alerts are sent, **Then** the user gets one digest message listing them instead of separate messages.
+2. **Given** more than 15 new matching jobs in one run, **When** alerts are sent, **Then** the user gets one digest listing them instead of separate messages. The digest is split into consecutive parts only if it is longer than the messaging service's maximum message length.
 3. **Given** 15 or fewer new matches, **When** alerts are sent, **Then** each job gets its own message, spaced about one second apart.
 
 ---
@@ -125,6 +125,10 @@ As the user setting it up, I want a dry-run mode that shows what would be found 
 - **Seen-jobs history grows forever**: entries older than 30 days are removed.
 - **The scheduler turns itself off after long inactivity**: the regular history updates count as repository activity, which prevents this.
 - **The page layout of job listings changes** so no job details can be read: the run reports that zero cards were parsed, not "no new jobs", so the problem can be noticed.
+- **The page layout of job descriptions changes** so a description returned by LinkedIn can't be read: the job stays unseen, and the run reports this as an error, not a warning. Otherwise jobs would keep waiting until they drop out of the 24-hour search window and are lost without anyone noticing.
+- **The history file's folder doesn't exist yet** (e.g., a fresh cloud checkout): the radar creates it before saving. A failed save must never cause the first-run summary to be sent again.
+- **Someone pushes to the repository during a run**: saving the history back still succeeds, so already-alerted jobs are not alerted again.
+- **Very long quiet periods**: if no job is seen or pruned for 60 days, the history doesn't change and the scheduler may be turned off. This is an accepted risk, documented with how to re-enable it.
 - **A title has both an include term and an exclusion term** (e.g., "Junior Angular Developer"): the exclusion wins.
 
 ## Requirements *(mandatory)*
@@ -140,9 +144,9 @@ As the user setting it up, I want a dry-run mode that shows what would be found 
 
 **Filtering**
 
-- **FR-005**: System MUST accept a job whose title contains "angular" (case-insensitive).
+- **FR-005**: System MUST accept a job whose title contains an include term. Terms match case-insensitively as whole words, or as a word prefix when configured that way. The initial term is "angular" plus words starting with it, such as "AngularJS".
 - **FR-006**: System MUST treat a title containing a frontend-type term ("front-end", "frontend", "front end", "ui engineer", "web developer") as conditionally acceptable. The system reads the job description and accepts the job only if the description mentions "angular". Descriptions are only fetched for jobs not seen before.
-- **FR-007**: System MUST reject any job whose title contains a configured exclusion term. The initial list is: junior, intern, trainee, react only, php, wordpress, .net developer. Exclusions take precedence over inclusions.
+- **FR-007**: System MUST reject any job whose title contains a configured exclusion term. The initial list is: junior, intern, internship, trainee, react only, php, wordpress, .net developer. Terms match whole words, so "intern" does not match "International". Exclusions take precedence over inclusions.
 - **FR-008**: System MUST reject all other jobs whose titles match neither rule.
 - **FR-009**: For worldwide-remote matches, the system MUST flag (not drop) jobs whose description mentions relocation or says the candidate must be located or based in the US, UK or EU.
 
@@ -164,13 +168,13 @@ As the user setting it up, I want a dry-run mode that shows what would be found 
 **Politeness & resilience**
 
 - **FR-018**: System MUST identify itself with a realistic desktop browser profile and wait a random 2–5 seconds between requests to LinkedIn.
-- **FR-019**: System MUST make no more than about 15 requests to LinkedIn per run.
+- **FR-019**: System MUST make at most 15 requests to LinkedIn per run, retries included. The cap can be lowered in the settings file.
 - **FR-020**: When LinkedIn responds with a rate-limit or block, the system MUST back off with growing waits and retry at most 2 times, then skip that search for the run.
 - **FR-021**: A failure in one search MUST NOT stop the other searches or the sending of alerts for jobs already found.
 
 **Operation & configuration**
 
-- **FR-022**: System MUST run automatically every 30 minutes in a cloud environment that works while the user's PC is off, and MUST NOT run more often than that.
+- **FR-022**: System MUST run automatically every 30 minutes in a cloud environment that works while the user's PC is off. Scheduled runs MUST NOT be more frequent than every 30 minutes. Manual runs (FR-023) are separate from this limit.
 - **FR-023**: System MUST allow a manual on-demand run.
 - **FR-024**: System MUST prevent overlapping runs.
 - **FR-025**: Searches, include terms, conditional terms and exclusion terms MUST be editable in a single settings file without code changes.
@@ -194,7 +198,7 @@ As the user setting it up, I want a dry-run mode that shows what would be found 
 - **SC-003**: At least 90% of alerts are judged relevant by the user (Angular / Angular-focused frontend, right seniority, right location or remote) over the first two weeks.
 - **SC-004**: The user's LinkedIn account is never used. The project and its secrets contain no LinkedIn credentials.
 - **SC-005**: The radar keeps running unattended for at least 60 days with no manual action.
-- **SC-006**: The first run produces exactly 1 message, and no run produces more than 16 messages (15 individual alerts or 1 digest, plus at most 1 status message).
+- **SC-006**: The first run produces exactly 1 message. No run produces more than 15 individual alerts. A busier run produces a single digest, which is split into consecutive parts only when it is longer than the messaging service's maximum message length.
 - **SC-007**: A new user can go from zero to receiving the first "Radar started" message in under 30 minutes by following the setup guide.
 - **SC-008**: Running costs are $0 within the free tier of the hosting and messaging services used.
 
@@ -206,5 +210,6 @@ As the user setting it up, I want a dry-run mode that shows what would be found 
 - LinkedIn has no separate "Lead" seniority level. Lead roles are usually tagged Mid-Senior, so Mid-Senior + Director covers them.
 - LinkedIn's keyword matching is loose, so title filtering (not the search itself) decides relevance.
 - A 24-hour search window combined with the seen-jobs history is enough to cover scheduler delays and skipped runs.
+- On the first run, N in "Radar started — N jobs currently open" counts every job whose title passes the title rules, including frontend-type titles whose descriptions were not checked. It's an approximate count, accepted so the first run doesn't need extra requests. Those jobs are marked as seen and never alerted.
 - Jobs requiring relocation are flagged, not removed, because wrongly dropping a true remote role costs more than an extra message.
 - Applying to jobs, tracking applications, and scoring or ranking jobs beyond the filters above are out of scope.
