@@ -108,6 +108,9 @@ function describeCards() {
     assert.deepEqual(empty, []);
     assert.equal(isParseAnomaly(emptyPage, empty), false);
     assert.equal(isParseAnomaly("   \n", []), false);
+    const linkedinEmpty = "<!DOCTYPE html>\n\n<!---->  ";
+    assert.deepEqual(parseSearchCards(linkedinEmpty), []);
+    assert.equal(isParseAnomaly(linkedinEmpty, []), false);
   });
 
   test("isParseAnomaly is true for non-empty html with no cards", () => {

@@ -124,8 +124,12 @@ export function buildJobPostingUrl(id: string): string {
 
 const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 
+export function isEmptySearchResponse(html: string): boolean {
+  return html.replace(/<!DOCTYPE[^>]*>/gi, "").replace(/<!--[\s\S]*?-->/g, "").trim() === "";
+}
+
 export function parseSearchCards(html: string): JobCard[] {
-  if (html.trim() === "") return [];
+  if (isEmptySearchResponse(html)) return [];
   const $ = cheerio.load(html);
   const cards: JobCard[] = [];
   $("div.base-card[data-entity-urn]").each((_, el) => {
@@ -148,7 +152,7 @@ export function parseSearchCards(html: string): JobCard[] {
 }
 
 export function isParseAnomaly(html: string, cards: JobCard[]): boolean {
-  return html.trim() !== "" && cards.length === 0;
+  return !isEmptySearchResponse(html) && cards.length === 0;
 }
 
 const BLOCK_TAGS = "p, br, li, ul, ol, div, section, h1, h2, h3, h4, h5, h6, tr, td, th";
